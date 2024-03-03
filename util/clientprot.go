@@ -1,0 +1,112 @@
+package util
+
+const (
+	ClientProtEventCameraPosition = 7
+	ClientProtWindowStatus        = 8  // TODO: confirm
+	ClientProtIfButton            = 12 // TODO: confirm
+	ClientProtSoundSongEnd        = 20
+	ClientProtEventKeyboard       = 23
+	ClientProtTransmitVarVerifyID = 25 // TODO: confirm
+	ClientProtEventFrameMapLoaded = 33 // not an official name
+	ClientProtEventMouseClick     = 37
+	ClientProtEventAppletFocus    = 44
+	ClientProtMapBuildComplete    = 55 // TODO: confirm
+	ClientProtMoveMinimapClick    = 59
+	ClientProtMessagePublic       = 60
+	ClientProtEventMouseMove      = 61
+	ClientProtGetExamine          = 66 // not an official name
+	ClientProtNoTimeout           = 71
+	ClientProtOpLoc1              = 73
+	ClientProtClientCheat         = 76
+	ClientProtMoveGameClick       = 78
+	ClientProtIdleTimer           = 81 // not an official name
+)
+
+// TODO: Reverse lookup
+
+var ClientProtLengths = make([]uint8, 128)
+
+func init() {
+	ClientProtLengths[0] = 2
+	ClientProtLengths[1] = 255
+	ClientProtLengths[2] = 8
+	ClientProtLengths[3] = 7
+	ClientProtLengths[4] = 8
+	ClientProtLengths[5] = 7
+	ClientProtLengths[6] = 15
+	ClientProtLengths[7] = 4
+	ClientProtLengths[8] = 6
+	ClientProtLengths[9] = 15
+	ClientProtLengths[10] = 8
+	ClientProtLengths[11] = 16
+	ClientProtLengths[12] = 8
+	ClientProtLengths[13] = 16
+	ClientProtLengths[14] = 8
+	ClientProtLengths[15] = 255
+	ClientProtLengths[16] = 255
+	ClientProtLengths[17] = 8
+	ClientProtLengths[18] = 255
+	ClientProtLengths[19] = 255
+	ClientProtLengths[20] = 4
+	ClientProtLengths[21] = 6
+	ClientProtLengths[22] = 7
+	ClientProtLengths[23] = 255
+	ClientProtLengths[24] = 255
+	ClientProtLengths[25] = 2
+	ClientProtLengths[26] = 7
+	ClientProtLengths[27] = 3
+	ClientProtLengths[28] = 3
+	ClientProtLengths[29] = 255
+	ClientProtLengths[30] = 255
+	ClientProtLengths[31] = 3
+	ClientProtLengths[32] = 3
+	ClientProtLengths[33] = 4
+	ClientProtLengths[34] = 255
+	ClientProtLengths[35] = 3
+	ClientProtLengths[36] = 3
+	ClientProtLengths[37] = 6
+	ClientProtLengths[38] = 4
+	ClientProtLengths[39] = 3
+	ClientProtLengths[40] = 7
+	ClientProtLengths[41] = 3
+	ClientProtLengths[42] = 255
+	ClientProtLengths[43] = 8
+	ClientProtLengths[44] = 1
+	ClientProtLengths[45] = 3
+	ClientProtLengths[46] = 2
+	ClientProtLengths[47] = 7
+	ClientProtLengths[48] = 11
+	ClientProtLengths[49] = 255
+	ClientProtLengths[50] = 3
+	ClientProtLengths[51] = 0
+	ClientProtLengths[52] = 12
+	ClientProtLengths[53] = 255
+	ClientProtLengths[54] = 8
+	ClientProtLengths[55] = 0
+	ClientProtLengths[56] = 255
+	ClientProtLengths[57] = 8
+	ClientProtLengths[58] = 2
+	ClientProtLengths[59] = 18
+	ClientProtLengths[60] = 255
+	ClientProtLengths[61] = 255
+	ClientProtLengths[62] = 3
+	ClientProtLengths[63] = 8
+	ClientProtLengths[64] = 255
+	ClientProtLengths[65] = 4
+	ClientProtLengths[66] = 2
+	ClientProtLengths[67] = 4
+	ClientProtLengths[68] = 3
+	ClientProtLengths[69] = 3
+	ClientProtLengths[70] = 3
+	ClientProtLengths[71] = 0
+	ClientProtLengths[72] = 7
+	ClientProtLengths[73] = 7
+	ClientProtLengths[74] = 255
+	ClientProtLengths[75] = 11
+	ClientProtLengths[76] = 255
+	ClientProtLengths[77] = 255
+	ClientProtLengths[78] = 5
+	ClientProtLengths[79] = 7
+	ClientProtLengths[80] = 7
+	ClientProtLengths[81] = 2
+}
