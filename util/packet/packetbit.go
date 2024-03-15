@@ -1,7 +1,7 @@
 package packet
 
 import (
-	"github.com/zsrv/rt5-server-go/util"
+	"github.com/zsrv/rt5-server-go/util/isaacrandom"
 )
 
 var Bitmask = []uint32{
@@ -19,7 +19,7 @@ var Bitmask = []uint32{
 type PacketBit struct {
 	Packet
 	bitOffset int
-	random    *util.IsaacRandom
+	random    *isaacrandom.IsaacRandom
 }
 
 func NewPacketBit() {
@@ -27,7 +27,7 @@ func NewPacketBit() {
 
 // initialize isaac
 func (p *PacketBit) SetKey(key []uint32) {
-	p.random = util.NewIsaacRandom(key)
+	p.random = isaacrandom.NewIsaacRandom(key)
 }
 
 // get remaining bits at a position

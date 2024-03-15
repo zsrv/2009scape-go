@@ -1,4 +1,4 @@
-package network
+package engine
 
 import (
 	"math"
@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/zsrv/rt5-server-go/util"
+	"github.com/zsrv/rt5-server-go/util/isaacrandom"
 	"github.com/zsrv/rt5-server-go/util/packet"
 )
 
@@ -26,8 +27,8 @@ type Client struct {
 
 	NetOut []NetOutData
 
-	RandomIn  *util.IsaacRandom
-	RandomOut *util.IsaacRandom
+	RandomIn  *isaacrandom.IsaacRandom
+	RandomOut *isaacrandom.IsaacRandom
 
 	Player          *Player
 	BufferStart     int
@@ -98,7 +99,7 @@ func (c *Client) handleNew() {
 		//checksum, err := c.BufferInRaw.G4B() // TODO: G4B make any diff here or no?
 		checksum := c.BufferInRaw.G4()
 
-		c.WriteRawSocket([]byte{WlProtOutSuccess})
+		c.WriteRawSocket([]byte{util.WlProtOutSuccess})
 		c.State = ClientStateWL
 
 		var response packet.Packet
@@ -108,19 +109,19 @@ func (c *Client) handleNew() {
 
 		response.P1(1) // encoding a world list update
 
-		if checksum != WorldListChecksum {
+		if checksum != util.WorldListChecksum {
 			response.P1(1) // encoding all information about the world list (countries, size of list, etc.)
 
-			wlraw := WorldListRaw.Bytes()
+			wlraw := util.WorldListRaw.Bytes()
 			response.PData(wlraw, len(wlraw))
 
-			response.P4(WorldListChecksum)
+			response.P4(util.WorldListChecksum)
 		} else {
 			response.P1(0) // not encoding any world list information, just updating the player counts
 		}
 
-		for _, world := range WorldList {
-			response.PSmart(uint16(world.ID - MinID))
+		for _, world := range util.WorldList {
+			response.PSmart(uint16(world.ID - util.MinID))
 			response.P2(uint16(world.Players))
 		}
 
@@ -416,11 +417,11 @@ func (c *Client) handleLogin() {
 		"username", username, "password", password,
 	)
 
-	c.RandomIn = util.NewIsaacRandom(key)
+	c.RandomIn = isaacrandom.NewIsaacRandom(key)
 	for i := 0; i < 4; i++ {
 		key[i] += 50
 	}
-	c.RandomOut = util.NewIsaacRandom(key)
+	c.RandomOut = isaacrandom.NewIsaacRandom(key)
 
 	player := NewPlayer(c)
 	if opcode == util.LoginProtWorldReconnect {

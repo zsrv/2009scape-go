@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/zsrv/rt5-server-go/network"
+	"github.com/zsrv/rt5-server-go/engine"
 )
 
 func main() {
@@ -12,7 +12,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s := network.NewServer()
+		s := engine.NewServer()
 
 		s.Addr = "127.0.0.1:40001"
 

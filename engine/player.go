@@ -1,4 +1,4 @@
-package network
+package engine
 
 import (
 	"math"
@@ -9,9 +9,6 @@ import (
 	"github.com/zsrv/rt5-server-go/util"
 	"github.com/zsrv/rt5-server-go/util/packet"
 )
-
-// TODO: Could not put this file in the engine package because there is
-// a circular dependency between player.go and client.go!
 
 const (
 	MessageTypeGame        = 0

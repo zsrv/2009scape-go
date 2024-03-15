@@ -1,13 +1,10 @@
-package network
+package util
 
 import (
 	"hash/crc32"
 
 	"github.com/zsrv/rt5-server-go/util/packet"
 )
-
-// TODO: had to move it into network because of an import cycle
-// between util/packet and util
 
 type CountriesS struct {
 	ID          int

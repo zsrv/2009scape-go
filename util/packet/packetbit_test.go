@@ -4,14 +4,14 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/zsrv/rt5-server-go/util"
+	"github.com/zsrv/rt5-server-go/util/isaacrandom"
 )
 
 func TestPacketBit_AccessBits(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	tests := []struct {
 		name   string
@@ -35,7 +35,7 @@ func TestPacketBit_AccessBytes(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	tests := []struct {
 		name   string
@@ -59,7 +59,7 @@ func TestPacketBit_AvailableBits(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	type args struct {
 		pos int
@@ -90,7 +90,7 @@ func TestPacketBit_G1Isaac(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	tests := []struct {
 		name   string
@@ -117,7 +117,7 @@ func TestPacketBit_GBit(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	type args struct {
 		n int
@@ -148,7 +148,7 @@ func TestPacketBit_GIsaac(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	type args struct {
 		dest   []uint8
@@ -177,7 +177,7 @@ func TestPacketBit_P1Isaac(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	type args struct {
 		op uint8
@@ -205,7 +205,7 @@ func TestPacketBit_PBit(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	type args struct {
 		n     int
@@ -254,7 +254,7 @@ func TestPacketBit_Peek1Isaac(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	tests := []struct {
 		name   string
@@ -281,7 +281,7 @@ func TestPacketBit_SetKey(t *testing.T) {
 	type fields struct {
 		Packet    Packet
 		bitOffset int
-		random    *util.IsaacRandom
+		random    *isaacrandom.IsaacRandom
 	}
 	type args struct {
 		key []uint32

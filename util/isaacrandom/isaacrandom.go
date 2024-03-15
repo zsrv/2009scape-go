@@ -1,4 +1,4 @@
-package util
+package isaacrandom
 
 const Size = 256
 const GoldenRatio uint32 = 0x9E3779B9

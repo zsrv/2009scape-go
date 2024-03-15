@@ -1,11 +1,8 @@
-package network
+package engine
 
 import (
 	"time"
 )
-
-// TODO: Could not put this file in the engine package because there is
-// a circular dependency between player.go and client.go!
 
 type World struct {
 	Players []*Player
