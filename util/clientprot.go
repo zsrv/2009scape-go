@@ -24,7 +24,7 @@ const (
 
 // TODO: Reverse lookup
 
-var ClientProtLengths = make([]uint8, 128)
+var ClientProtLengths = make([]uint8, 256)
 
 func init() {
 	ClientProtLengths[0] = 2

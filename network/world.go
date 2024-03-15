@@ -39,7 +39,6 @@ func (w *World) RemovePlayer(client Client) {
 }
 
 func (w *World) Tick() {
-	//fmt.Printf(" WTick ")
 	start := time.Now().UnixMilli()
 
 	// read packets

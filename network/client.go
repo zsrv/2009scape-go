@@ -1,16 +1,13 @@
 package network
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"net"
-	"path"
-	"runtime"
 	"strconv"
 
 	"github.com/zsrv/rt5-server-go/util"
-	"github.com/zsrv/rt5-server-go/util/bytebuffer"
+	"github.com/zsrv/rt5-server-go/util/packet"
 )
 
 const (
@@ -39,7 +36,7 @@ type Client struct {
 
 	PacketCount []uint8
 
-	BufferInRaw bytebuffer.ByteBuffer
+	BufferInRaw packet.Packet
 }
 
 func NewClient(socket net.Conn, server *Server) *Client {
@@ -54,10 +51,10 @@ func NewClient(socket net.Conn, server *Server) *Client {
 }
 
 func (c *Client) handleData() {
-	fmt.Println("entered handleData()")
-	// switch on the client State here, then pass to the more specific handlers?
+	c.Server.Logger.Debug("entered handleData()")
 	switch c.State {
 	case ClientStateClosed:
+		c.Server.Logger.Debug("closing connection")
 		c.Socket.Close()
 	case ClientStateNew:
 		c.handleNew()
@@ -72,64 +69,58 @@ func (c *Client) handleData() {
 	default:
 		c.Socket.Close()
 		c.State = ClientStateClosed
-		fmt.Printf("Invalid client state: %v\n", strconv.Itoa(c.State))
+		c.Server.Logger.Error("invalid client state", "state", strconv.Itoa(c.State))
 	}
 }
 
 func (c *Client) handleNew() {
-	fmt.Println("entered handleNew()")
-	opcode, err := c.BufferInRaw.G1()
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	c.Server.Logger.Debug("entered handleNew()")
+	opcode := c.BufferInRaw.G1()
 
 	switch opcode {
 	case util.LoginProtJS5Open:
-		fmt.Println("IN LoginProtJS5Open")
-		clientVersion, err := c.BufferInRaw.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		c.Server.Logger.Debug("handleNew(): case LoginProtJS5Open")
+		clientVersion := c.BufferInRaw.G4()
 
 		if clientVersion == 578 {
-			fmt.Println("client version is 578")
+			c.Server.Logger.Debug("client version is 578")
 			c.WriteRawSocket([]byte{util.JS5ProtOutSuccess})
 			c.State = ClientStateJS5
 		} else {
-			fmt.Printf("not 578! received clientVersion %v\n", clientVersion)
+			c.Server.Logger.Debug("client version is not 578", "clientVersion", clientVersion)
 			c.WriteRawSocket([]byte{util.JS5ProtOutOutOfDate})
 			c.Socket.Close()
 			c.State = ClientStateClosed
 		}
 
 	case util.LoginProtWorldListFetch:
-		fmt.Println("IN LoginProtWorldListFetch")
-		checksum, err := c.BufferInRaw.G4B()
-		if err != nil {
-			fmt.Println(err)
-		}
+		c.Server.Logger.Debug("handleNew(): case LoginProtWorldListFetch")
+		//checksum, err := c.BufferInRaw.G4B() // TODO: G4B make any diff here or no?
+		checksum := c.BufferInRaw.G4()
 
-		c.WriteRawSocket([]byte{util.WlProtOutSuccess})
+		c.WriteRawSocket([]byte{WlProtOutSuccess})
 		c.State = ClientStateWL
 
-		var response bytebuffer.ByteBuffer
+		var response packet.Packet
 
 		response.P2(0)
 		start := response.Len() // offset
 
-		response.PBool(true) // encoding a world list update
+		response.P1(1) // encoding a world list update
 
-		if uint32(checksum) != util.WorldListChecksum {
-			response.PBool(true) // encoding all information about the world list (countries, size of list, etc.)
-			response.PData(&util.WorldListRaw)
-			response.P4(util.WorldListChecksum)
+		if checksum != WorldListChecksum {
+			response.P1(1) // encoding all information about the world list (countries, size of list, etc.)
+
+			wlraw := WorldListRaw.Bytes()
+			response.PData(wlraw, len(wlraw))
+
+			response.P4(WorldListChecksum)
 		} else {
-			response.PBool(false) // not encoding any world list information, just updating the player counts
+			response.P1(0) // not encoding any world list information, just updating the player counts
 		}
 
-		for _, world := range util.WorldList {
-			response.PSmart(uint16(world.ID - util.MinID))
+		for _, world := range WorldList {
+			response.PSmart(uint16(world.ID - MinID))
 			response.P2(uint16(world.Players))
 		}
 
@@ -137,8 +128,8 @@ func (c *Client) handleNew() {
 		c.WriteRawSocket(response.Bytes())
 
 	case util.LoginProtWorldHandshake: // login
-		fmt.Println("IN LoginProtWorldHandshake")
-		var response bytebuffer.ByteBuffer
+		c.Server.Logger.Debug("handleNew(): case LoginProtWorldHandshake")
+		var response packet.Packet
 		response.P1(0)
 		response.P8(uint64(math.Floor(rand.Float64()*0xFFFF_FFFF))<<32 | uint64(math.Floor(rand.Float64()*0xFFFF_FFFF)))
 
@@ -146,45 +137,27 @@ func (c *Client) handleNew() {
 		c.State = ClientStateLogin
 
 	case util.LoginProtCreateLogProgress:
-		fmt.Println("IN LoginProtCreateLogProgress")
-		day, err := c.BufferInRaw.G1()
-		if err != nil {
-			fmt.Println(err)
-		}
+		c.Server.Logger.Debug("handleNew(): case LoginProtCreateLogProgress")
+		day := c.BufferInRaw.G1()
+		month := c.BufferInRaw.G1()
+		year := c.BufferInRaw.G2()
+		country := c.BufferInRaw.G2()
 
-		month, err := c.BufferInRaw.G1()
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		year, err := c.BufferInRaw.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		country, err := c.BufferInRaw.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		fmt.Printf("LOG PROGRESS: %v-%v-%v %v\n", year, month, day, country)
+		c.Server.Logger.Debug("progress", "year", year, "month", month, "day", day, "country", country)
 
 		c.WriteRawSocket([]byte{2})
 
 	case util.LoginProtCreateCheckName:
-		fmt.Println("IN LoginProtCreateCheckName")
-		usernameBase37, err := c.BufferInRaw.G8()
-		if err != nil {
-			fmt.Println(err)
-		}
+		c.Server.Logger.Debug("handleNew(): case LoginProtCreateCheckName")
+		usernameBase37 := c.BufferInRaw.G8()
 		username := util.FromBase37(usernameBase37)
-		fmt.Printf("CREATE CHECK NAME: %v\n", username)
+		c.Server.Logger.Debug("decoded username", "username", username)
 
 		// success:
 		c.WriteRawSocket([]byte{2})
 
 		// suggested names:
-		var response bytebuffer.ByteBuffer
+		var response packet.Packet
 		response.P1(21)
 
 		names := []string{"test", "test2"}
@@ -196,117 +169,67 @@ func (c *Client) handleNew() {
 		c.WriteRawSocket(response.Bytes())
 
 	case util.LoginProtCreateAccount:
-		fmt.Println("IN LoginProtCreateAccount")
-		length, err := c.BufferInRaw.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
+		c.Server.Logger.Debug("handleNew(): case LoginProtCreateAccount")
+		length := c.BufferInRaw.G2()
 
-		newBuf, err := c.BufferInRaw.GData(int(length))
-		if err != nil {
-			fmt.Println(err)
-		}
-		c.BufferInRaw = *bytebuffer.NewBuffer(newBuf)
+		newBuf := make([]byte, length)
+		c.BufferInRaw.GData(newBuf, int(length))
+		c.BufferInRaw = *packet.NewPacket(newBuf)
 
-		revision, err := c.BufferInRaw.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("Revision: %v\n", revision)
+		revision := c.BufferInRaw.G2()
 
 		decrypted, err := c.BufferInRaw.RSADec()
 		if err != nil {
-			fmt.Println(err)
+			// TODO: make an error wrapper that logs the error and closes the client connection?
+			// check my notes for this
+			c.Server.Logger.Error("rsa decryption error", "error", err)
 		}
 
-		rsaMagic, err := decrypted.G1()
-		if err != nil {
-			fmt.Println(err)
-		}
+		rsaMagic := decrypted.G1()
 		if rsaMagic != 10 {
 			// TODO: read failure
-			fmt.Println("rsaMagic read failure!", rsaMagic)
+			c.Server.Logger.Error("rsaMagic read failure", "rsaMagic", rsaMagic)
 		}
 
 		key := make([]uint32, 4)
-		optIn, err := decrypted.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("OptIn: %v\n", optIn)
+		optIn := decrypted.G2()
 
-		usernameBase37, err := decrypted.G8()
-		if err != nil {
-			fmt.Println(err)
-		}
+		usernameBase37 := decrypted.G8()
 		username := util.FromBase37(usernameBase37)
-		fmt.Printf("Username: %v\n", username)
 
-		key1, err := decrypted.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		key1 := decrypted.G4()
 		key[0] = key1
 
 		password := decrypted.GJStr()
-		fmt.Printf("Password: %v\n", password)
 
-		key2, err := decrypted.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		key2 := decrypted.G4()
 		key[1] = key2
 
-		affiliate, err := decrypted.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("Affiliate: %v\n", affiliate)
+		affiliate := decrypted.G2()
 
-		day, err := decrypted.G1()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("Day: %v\n", day)
+		day := decrypted.G1()
 
-		month, err := decrypted.G1()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("Month: %v\n", month)
+		month := decrypted.G1()
 
-		key3, err := decrypted.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		key3 := decrypted.G4()
 		key[2] = key3
 
-		year, err := decrypted.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("Year: %v\n", year)
+		year := decrypted.G2()
 
-		country, err := decrypted.G2()
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Printf("Country: %v\n", country)
+		country := decrypted.G2()
 
-		key4, err := decrypted.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		key4 := decrypted.G4()
 		key[3] = key4
 
-		extra := bytebuffer.NewBuffer(c.BufferInRaw.Bytes())
-		err = extra.TinyDec(key, extra.Len(), 0)
-		if err != nil {
-			fmt.Println(err)
-		}
+		extra := packet.NewPacket(c.BufferInRaw.Bytes())
+		extra.TinyDec(0, key, extra.Len())
 
 		email := extra.GJStr()
-		fmt.Printf("Email: %v\n", email)
+
+		c.Server.Logger.Debug("account creation values",
+			"revision", revision, "optIn", optIn, "username", username, "password", password,
+			"affiliate", affiliate, "day", day, "month", month, "year", year, "country", country,
+			"email", email)
 
 		c.WriteRawSocket([]byte{2})
 
@@ -339,13 +262,13 @@ func (c *Client) handleNew() {
 		// 27 - service unavailable
 
 	default:
-		fmt.Printf("unknown opcode %v\n", opcode)
+		c.Server.Logger.Warn("unknown opcode", "opcode", opcode)
 		c.State = ClientStateClosed
 	}
 }
 
 func (c *Client) handleJS5() {
-	fmt.Println("entered handleJS5()")
+	c.Server.Logger.Debug("entered handleJS5()")
 	type QueueData struct {
 		Type    uint8
 		Archive uint8
@@ -355,24 +278,12 @@ func (c *Client) handleJS5() {
 	var queue []QueueData
 
 	for c.BufferInRaw.Len() != 0 {
-		xType, err := c.BufferInRaw.G1()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+		xType := c.BufferInRaw.G1()
 
 		switch xType {
 		case util.JS5ProtInRequest, util.JS5ProtInPriorityRequest:
-			archive, err := c.BufferInRaw.G1()
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			group, err := c.BufferInRaw.G2()
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
+			archive := c.BufferInRaw.G1()
+			group := c.BufferInRaw.G2()
 
 			queue = append(queue, QueueData{
 				Type:    xType,
@@ -386,18 +297,17 @@ func (c *Client) handleJS5() {
 
 	// TODO: move this out of the network handler and into a dedicated Js5 queue loop (for all requests)
 	// TODO: async?
-	fmt.Printf("%+v\n", queue) // DEBUG
 	for _, v := range queue {
 		file, err := util.GetGroup(v.Archive, v.Group)
 		if err != nil {
-			fmt.Println(err)
+			c.Server.Logger.Error("error getting group", "error", err)
+			// TODO: close conn etc
 			return
 		}
 
 		if v.Archive == 255 && v.Group == 255 {
 			// checksum table for all archives
-			//var response bytes.Buffer
-			var response bytebuffer.ByteBuffer
+			var response packet.Packet
 
 			response.P1(v.Archive)
 			response.P2(v.Group)
@@ -419,7 +329,7 @@ func (c *Client) handleJS5() {
 				settings |= 0x80
 			}
 
-			var response bytebuffer.ByteBuffer
+			var response packet.Packet
 			response.P1(v.Archive)
 			response.P2(v.Group)
 			response.P1(settings)
@@ -439,133 +349,72 @@ func (c *Client) handleJS5() {
 
 func (c *Client) handleWL() {
 	// no communication
-	fmt.Println("entered handleWL()")
+	c.Server.Logger.Debug("entered handleWL()")
 }
 
 func (c *Client) handleLogin() {
-	fmt.Println("entered handleLogin()")
-	opcode, err := c.BufferInRaw.G1()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Opcode: %v\n", opcode)
+	c.Server.Logger.Debug("entered handleLogin()")
+	opcode := c.BufferInRaw.G1()
 
-	length, err := c.BufferInRaw.G2()
-	if err != nil {
-		fmt.Println(err)
-	}
+	length := c.BufferInRaw.G2()
 
-	data, err := c.BufferInRaw.GData(int(length))
-	if err != nil {
-		fmt.Println(err)
-	}
-	c.BufferInRaw = *bytebuffer.NewBuffer(data)
+	data := make([]byte, length)
+	c.BufferInRaw.GData(data, int(length))
+	c.BufferInRaw = *packet.NewPacket(data)
 
-	revision, err := c.BufferInRaw.G4()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Revision: %v\n", revision)
+	revision := c.BufferInRaw.G4()
 
-	byte1, err := c.BufferInRaw.G1()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Byte1: %v\n", byte1)
+	byte1 := c.BufferInRaw.G1()
 
-	windowMode, err := c.BufferInRaw.G1()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Window Mode: %v\n", windowMode)
+	windowMode := c.BufferInRaw.G1()
 
-	canvasWidth, err := c.BufferInRaw.G2()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Canvas Width: %v\n", canvasWidth)
+	canvasWidth := c.BufferInRaw.G2()
 
-	canvasHeight, err := c.BufferInRaw.G2()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Canvas Height: %v\n", canvasHeight)
+	canvasHeight := c.BufferInRaw.G2()
 
-	prefInt, err := c.BufferInRaw.G1()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("PrefInt: %v\n", prefInt)
+	prefInt := c.BufferInRaw.G1()
 
-	uid, err := c.BufferInRaw.GData(24)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("UID: %v\n", uid)
+	uid := make([]byte, 24)
+	c.BufferInRaw.GData(uid, 24)
 
 	settings := c.BufferInRaw.GJStr()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Settings: %v\n", settings)
 
-	affiliate, err := c.BufferInRaw.G4()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Affiliate: %v\n", affiliate)
+	affiliate := c.BufferInRaw.G4()
 
-	preferencesLen, err := c.BufferInRaw.G1()
-	if err != nil {
-		fmt.Println(err)
-	}
+	preferencesLen := c.BufferInRaw.G1()
 
-	preferences, err := c.BufferInRaw.GData(int(preferencesLen))
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("Preferences: %v\n", preferences)
+	preferences := make([]byte, preferencesLen)
+	c.BufferInRaw.GData(preferences, int(preferencesLen))
 
-	verifyId, err := c.BufferInRaw.G2()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("VerifyID: %v\n", verifyId)
+	verifyId := c.BufferInRaw.G2()
 
 	checksums := make([]uint32, 29)
 	for i := 0; i < 29; i++ {
-		checksums[i], err = c.BufferInRaw.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		checksums[i] = c.BufferInRaw.G4()
 	}
 
 	decrypted, err := c.BufferInRaw.RSADec()
 	if err != nil {
-		fmt.Println(err)
+		c.Server.Logger.Error("error decrypting buffer", "error", err)
+		return // TODO: close connection etc
 	}
-	rsaMagic, err := decrypted.G1()
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Printf("rsaMagic: %v\n", rsaMagic)
+	rsaMagic := decrypted.G1()
 	key := make([]uint32, 4)
 	for i := 0; i < 4; i++ {
-		key[i], err = decrypted.G4()
-		if err != nil {
-			fmt.Println(err)
-		}
+		key[i] = decrypted.G4()
 	}
 
-	username1, err := decrypted.G8()
-	if err != nil {
-		fmt.Println(err)
-	}
+	username1 := decrypted.G8()
 	username := util.FromBase37(username1)
-	fmt.Printf("Username: %v\n", username)
 
 	password := decrypted.GJStr()
-	fmt.Printf("Password: %v\n", password)
+
+	c.Server.Logger.Debug("login", "opcode", opcode, "revision", revision, "byte1", byte1,
+		"windowMode", windowMode, "canvasWidth", canvasWidth, "canvasHeight", canvasHeight,
+		"prefInt", prefInt, "uid", uid, "settings", settings, "affiliate", affiliate,
+		"preferences", preferences, "verifyId", verifyId, "rsaMagic", rsaMagic,
+		"username", username, "password", password,
+	)
 
 	c.RandomIn = util.NewIsaacRandom(key)
 	for i := 0; i < 4; i++ {
@@ -584,7 +433,7 @@ func (c *Client) handleLogin() {
 	c.Server.World.RegisterPlayer(player)
 	c.BufferStart = c.Player.ID * 30000
 
-	var response bytebuffer.ByteBuffer
+	var response packet.Packet
 	if opcode == util.LoginProtWorldReconnect {
 		response.P1(15)
 	} else {
@@ -594,13 +443,13 @@ func (c *Client) handleLogin() {
 	if opcode == util.LoginProtWorldConnect {
 		response.P1(0)                 // staff mod level
 		response.P1(0)                 // player mod level
-		response.PBool(false)          // player underage
-		response.PBool(false)          // parentalChatConsent
-		response.PBool(false)          // parentalAdvertConsent
-		response.PBool(false)          // mapQuickChat
+		response.P1(0)                 // player underage
+		response.P1(0)                 // parentalChatConsent
+		response.P1(0)                 // parentalAdvertConsent
+		response.P1(0)                 // mapQuickChat
 		response.P2(uint16(player.ID)) // selfId
-		response.PBool(false)          // MouseRecorder
-		response.PBool(true)           // mapMembers
+		response.P1(0)                 // MouseRecorder
+		response.P1(1)                 // mapMembers
 	}
 
 	c.WriteRawSocket(response.Bytes())
@@ -608,11 +457,13 @@ func (c *Client) handleLogin() {
 	c.State = ClientStateGame
 	c.Server.World.AddPlayer(player)
 
-	fmt.Println("LOGIN COMPLETE")
+	c.Server.Logger.Debug("login complete")
 }
 
 func (c *Client) handleGame() {
-	fmt.Println("entered handleGame()")
+	c.Server.Logger.Debug("entered handleGame()")
+	// TODO: is there a Packet func that does the stuff being done to data here?
+	// so then we don't have to extract the bytes from the buffer/Packet
 	data := c.BufferInRaw.Bytes()
 
 	offset := 0
@@ -620,11 +471,11 @@ func (c *Client) handleGame() {
 		start := offset
 
 		if c.RandomIn != nil {
-			data[offset] -= byte(c.RandomIn.NextInt())
+			data[offset] -= byte(c.RandomIn.GetNext())
 		}
 
 		opcode := data[offset]
-		offset += 1
+		offset++
 
 		length := util.ClientProtLengths[opcode]
 
@@ -632,13 +483,14 @@ func (c *Client) handleGame() {
 			length = data[offset]
 			offset += 1
 		} else if length == 254 {
-			length = data[offset]<<8 | data[offset+1]
+			// TODO: adjusted this
+			length = uint8(uint16(data[offset])<<8 | uint16(data[offset+1]))
 			offset += 2
 		}
 
 		if int(length) > 30000-c.BufferInOffset {
-			fmt.Println("Packet overflow for this tick")
-			return
+			c.Server.Logger.Error("packet overflow for this tick")
+			return // TODO: close conn
 		}
 
 		if c.PacketCount[opcode]+1 > 10 {
@@ -665,11 +517,11 @@ func (c *Client) ResetIn() {
 
 type DecodedData struct {
 	ID   uint8
-	Data bytebuffer.ByteBuffer
+	Data packet.Packet
 }
 
 func (c *Client) DecodeIn() []DecodedData {
-	fmt.Println("Client.DecodeIn() ENTERED")
+	c.Server.Logger.Debug("entered DecodeIn()")
 	offset := 0
 
 	var decoded []DecodedData
@@ -688,7 +540,7 @@ func (c *Client) DecodeIn() []DecodedData {
 
 		decoded = append(decoded, DecodedData{
 			ID:   opcode,
-			Data: *bytebuffer.NewBuffer(c.Server.BufferIn[c.BufferStart+offset : c.BufferStart+offset+int(length)]),
+			Data: *packet.NewPacket(c.Server.BufferIn[c.BufferStart+offset : c.BufferStart+offset+int(length)]),
 		})
 
 		offset += int(length)
@@ -698,7 +550,7 @@ func (c *Client) DecodeIn() []DecodedData {
 }
 
 func (c *Client) Write(data []byte) {
-	fmt.Printf("Client.Write() DATA TO WRITE (%v) %v: %v\n", getCallerInfo(2), len(data), data)
+	//util.DebugfBytes(&c.Server.Logger, "Write()", data)
 	offset := 0
 	remaining := len(data)
 
@@ -730,9 +582,7 @@ func (c *Client) Write(data []byte) {
 }
 
 func (c *Client) Flush() {
-	//fmt.Println("entered Client.Flush()")
 	if c.BufferOutOffset > 0 {
-		//fmt.Printf("Client.Flush DATA: %v\n", c.Server.BufferOut[c.BufferStart:c.BufferStart+c.BufferOutOffset])
 		c.WriteRawSocket(c.Server.BufferOut[c.BufferStart : c.BufferStart+c.BufferOutOffset])
 		c.BufferOutOffset = 0
 	}
@@ -744,45 +594,28 @@ type NetOutData struct {
 }
 
 func (c *Client) Queue(data []byte, encrypt bool) {
-	//fmt.Println("Client.Queue() ENTERED")
-	//c.NetOut = append(c.NetOut)
 	c.NetOut = append(c.NetOut, NetOutData{
 		Data:    data,
 		Encrypt: encrypt,
 	})
-	fmt.Printf("Client.Queue() (%v): Encrypt %v, Data %v\n", getCallerInfo(2), encrypt, data)
 }
 
 func (c *Client) EncodeOut() {
-	//fmt.Println("EncodeOut() ENTERED")
 	for i := 0; i < len(c.NetOut); i++ {
-		packet := c.NetOut[i]
+		xPacket := c.NetOut[i]
 
-		if /*c.RandomOut != nil &&*/ packet.Encrypt {
+		if c.RandomOut != nil && xPacket.Encrypt {
 			// TODO: uint32 converted to byte!!
-			packet.Data[0] += byte(c.RandomOut.NextInt())
+			xPacket.Data[0] += byte(c.RandomOut.GetNext())
 		}
 
-		c.Write(packet.Data)
+		c.Write(xPacket.Data)
 	}
 }
 
 func (c *Client) WriteRawSocket(data []byte) {
-	fmt.Printf("NET WRITE %v (%v): %v\n", len(data), getCallerInfo(2), data)
-	n, err := c.Socket.Write(data)
+	_, err := c.Socket.Write(data)
 	if err != nil {
-		fmt.Printf("NET WRITE ERROR: %v\n", err)
+		c.Server.Logger.Error("error writing to connection", "error", err)
 	}
-	fmt.Printf("NET WRITE %v DONE\n", n)
-}
-
-func getCallerInfo(skip int) (info string) {
-	pc, file, lineNo, ok := runtime.Caller(skip)
-	if !ok {
-		info = "runtime.Caller() failed"
-		return
-	}
-	funcName := runtime.FuncForPC(pc).Name()
-	fileName := path.Base(file) // The Base function returns the last element of the path
-	return fmt.Sprintf("FuncName:%s, file:%s, line:%d ", funcName, fileName, lineNo)
 }

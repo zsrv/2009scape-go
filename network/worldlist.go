@@ -1,10 +1,13 @@
-package util
+package network
 
 import (
 	"hash/crc32"
 
-	"github.com/zsrv/rt5-server-go/util/bytebuffer"
+	"github.com/zsrv/rt5-server-go/util/packet"
 )
+
+// TODO: had to move it into network because of an import cycle
+// between util/packet and util
 
 type CountriesS struct {
 	ID          int
@@ -70,7 +73,7 @@ var WorldList = []WorldParameters{
 		Port:      43594,
 		Country:   6,
 		Activity:  "Activity Name",
-		Members:   true,
+		Members:   false,
 		QuickChat: false,
 		PvP:       false,
 		LootShare: true,
@@ -79,8 +82,7 @@ var WorldList = []WorldParameters{
 	},
 }
 
-// var WorldListRaw bytes.Buffer
-var WorldListRaw bytebuffer.ByteBuffer
+var WorldListRaw packet.Packet
 var WorldListChecksum uint32 = 0
 
 func init() {
@@ -155,7 +157,7 @@ func init() {
 
 func init() {
 	b := WorldListRaw.Bytes()
-	WorldListRaw = *bytebuffer.NewBuffer(b) // bad workaround since we can't calc checksum without clearing buffer
+	WorldListRaw = *packet.NewPacket(b) // bad workaround since we can't calc checksum without clearing buffer
 
 	WorldListChecksum = crc32.ChecksumIEEE(b)
 }

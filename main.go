@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"os"
 	"sync"
 
 	"github.com/zsrv/rt5-server-go/network"
@@ -16,8 +16,14 @@ func main() {
 
 		s.Addr = "127.0.0.1:40001"
 
-		log.Println("Starting server at", s.Addr)
-		log.Fatal(s.ListenAndServe())
+		s.Logger.Info("starting server", "listenAddr", s.Addr)
+		err := s.ListenAndServe()
+		if err != nil {
+			s.Logger.Error("error", err)
+			os.Exit(1)
+		} else {
+			s.Logger.Info("server exiting")
+		}
 	}()
 
 	//wg.Add(1)

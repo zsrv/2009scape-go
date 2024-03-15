@@ -42,7 +42,7 @@ func TestNewIsaacRandom(t *testing.T) {
 
 func TestIsaacRandom_NextInt(t *testing.T) {
 	type fields struct {
-		count int
+		count int32
 		a     uint32
 		b     uint32
 		c     uint32
@@ -54,11 +54,10 @@ func TestIsaacRandom_NextInt(t *testing.T) {
 		fields fields
 		want   uint32
 	}{
-		// TODO: Add test cases.
 		{
-			name:   "",
+			name:   "valid",
 			fields: fields(validInitial),
-			want:   0,
+			want:   3939328812,
 		},
 	}
 	for _, tt := range tests {
@@ -71,8 +70,8 @@ func TestIsaacRandom_NextInt(t *testing.T) {
 				mem:   tt.fields.mem,
 				rsl:   tt.fields.rsl,
 			}
-			if got := is.NextInt(); got != tt.want {
-				t.Errorf("NextInt() = %v, want %v", got, tt.want)
+			if got := is.GetNext(); got != tt.want {
+				t.Errorf("GetNext() = %v, want %v", got, tt.want)
 			}
 		})
 	}

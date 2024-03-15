@@ -3,11 +3,13 @@ package network
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/zsrv/rt5-server-go/util"
 )
 
 var (
@@ -17,6 +19,7 @@ var (
 type Server struct {
 	Addr string
 
+	Logger       slog.Logger
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 
@@ -37,6 +40,7 @@ type Server struct {
 func NewServer() *Server {
 	return &Server{
 		// TODO: init buffers here?
+		Logger:  *util.NewLogger(),
 		Clients: make(map[*Client]struct{}),
 
 		World: NewWorld(),
@@ -69,7 +73,7 @@ func (s *Server) Serve(l net.Listener) error {
 			select {
 			case <-s.done:
 				// we called Close()
-				fmt.Println("connection closed by server:", socket.RemoteAddr())
+				s.Logger.Info("connection closed by server", "remoteAddr", socket.RemoteAddr())
 				return nil
 			default:
 				return err
@@ -82,7 +86,7 @@ func (s *Server) Serve(l net.Listener) error {
 
 			err := s.handleConn(NewClient(socket, s))
 			if err != nil {
-				fmt.Println("handler error:", err)
+				s.Logger.Error("handler error", "error", err)
 			}
 		}()
 	}
@@ -161,7 +165,7 @@ func (s *Server) handleConn(c *Client) error {
 
 	defer func() {
 		c.Socket.Close()
-		fmt.Println("Disconnected from", c.Socket.RemoteAddr())
+		s.Logger.Info("connection closed", "remoteAddr", c.Socket.RemoteAddr())
 
 		if c.Player != nil {
 			s.World.RemovePlayer(*c)
@@ -182,26 +186,25 @@ func (s *Server) handleConn(c *Client) error {
 	buf := make([]byte, 65536)
 
 	for {
-		fmt.Println("NET: New for loop")
+		s.Logger.Debug("waiting for new data")
 		n, err := c.Socket.Read(buf)
 		if err == io.EOF {
 			// Connection closed
 			return nil
 		}
 		if err != nil {
-			fmt.Printf("READ ERROR: %v\n", err)
+			s.Logger.Error("conn read error", "error", err)
 			return err
 		}
 
 		msg := buf[:n]
-		fmt.Printf("NET READ %v: %v\n", n, msg)
+		util.DebugfBytes(&s.Logger, "conn read", msg)
 
 		c.BufferInRaw.Reset()
-		n, err = c.BufferInRaw.Write(msg)
+		_, err = c.BufferInRaw.Write(msg)
 		if err != nil {
-			fmt.Printf("WRITE ERROR: %v\n", err)
+			s.Logger.Error("conn write error", "error", err)
 		}
-		fmt.Printf("RAW BUF WRITE %v\n", n)
 
 		c.handleData()
 	}

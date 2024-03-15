@@ -1,14 +1,13 @@
 package network
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/zsrv/rt5-server-go/util"
-	"github.com/zsrv/rt5-server-go/util/bytebuffer"
+	"github.com/zsrv/rt5-server-go/util/packet"
 )
 
 // TODO: Could not put this file in the engine package because there is
@@ -31,7 +30,7 @@ type Player struct {
 	Reconnecting bool
 	Loaded       bool
 	Loading      bool
-	Appearance   *bytebuffer.ByteBuffer
+	Appearance   *packet.Packet
 	Placement    bool
 	VerifyID     int
 
@@ -71,12 +70,11 @@ func NewPlayer(client *Client) *Player {
 }
 
 func (p *Player) Tick() {
-	//fmt.Print(" PTick ")
 	if !p.Loaded && !p.Loading {
 		p.Loading = true
 
 		if p.Reconnecting {
-			var response bytebuffer.ByteBuffer
+			var response packet.PacketBit
 			response.P2(0)
 			start := response.Len() // offset
 
@@ -95,12 +93,12 @@ func (p *Player) Tick() {
 			response.AccessBytes()
 
 			response.PSize2(response.Len() - start)
-			debugBytes := response.Bytes()
-			//p.Client.Queue(response.Bytes(), false)
-			p.Client.Queue(debugBytes, false)
-			fmt.Printf("Player.tick reconnecting response %v: %v\n", len(debugBytes), debugBytes)
+			respBytes := response.Bytes()
+			//util.DebugfBytes(&p.Client.Server.Logger, "Tick() Reconnecting queue", respBytes)
+			p.Client.Queue(respBytes, false)
 		} else if p.FirstLoad {
-			var response bytebuffer.ByteBuffer
+			// TODO: something's wrong in here
+			var response packet.PacketBit
 			response.P1(98)
 			response.P2(0)
 			start := response.Len()
@@ -124,7 +122,7 @@ func (p *Player) Tick() {
 			response.IP2(uint16(p.Pos.ZoneX()))
 			response.P2(uint16(p.Pos.ZoneZ()))
 			response.P1(uint8(p.Pos.BAIndex))
-			response.P1Neg(0)
+			response.P1Alt2(0)
 
 			for mapsquareX := (p.Pos.ZoneX() - (p.Pos.BASizeX >> 4)) >> 3; mapsquareX <= (p.Pos.ZoneX()+(p.Pos.BASizeX>>4))>>3; mapsquareX++ {
 				for mapsquareZ := (p.Pos.ZoneZ() - (p.Pos.BASizeZ >> 4)) >> 3; mapsquareZ <= (p.Pos.ZoneZ()+(p.Pos.BASizeZ>>4))>>3; mapsquareZ++ {
@@ -143,10 +141,9 @@ func (p *Player) Tick() {
 			}
 
 			response.PSize2(response.Len() - start)
-			debugBytes := response.Bytes()
-			//p.Client.Queue(response.Bytes(), true)
-			p.Client.Queue(debugBytes, true)
-			fmt.Printf("Player.tick first load response %v: %v\n", len(debugBytes), debugBytes)
+			respBytes := response.Bytes()
+			//util.DebugfBytes(&p.Client.Server.Logger, "Tick() FirstLoad queue", respBytes)
+			p.Client.Queue(respBytes, true)
 		}
 
 		if p.FirstLoad {
@@ -187,8 +184,8 @@ func (p *Player) Tick() {
 
 	// player info
 	if p.Loaded {
-		var response bytebuffer.ByteBuffer
-		var updateBlock bytebuffer.ByteBuffer
+		var response packet.PacketBit
+		var updateBlock packet.Packet
 
 		response.P1(72)
 		response.P2(0)
@@ -198,13 +195,13 @@ func (p *Player) Tick() {
 		p.ProcessActivePlayers(&response, &updateBlock, false)
 		p.ProcessInactivePlayers(&response, &updateBlock, true)
 		p.ProcessInactivePlayers(&response, &updateBlock, false)
-		response.PData(&updateBlock)
+		x := updateBlock.Bytes()
+		response.PData(x, len(x))
 
 		response.PSize2(response.Len() - start) // offset
-		//p.Client.Queue(response.Bytes(), true)
-		debugBytes := response.Bytes()
-		p.Client.Queue(debugBytes, true)
-		fmt.Printf("Player.tick player info response %v: %v\n", len(debugBytes), debugBytes)
+		respBytes := response.Bytes()
+		//util.DebugfBytes(&p.Client.Server.Logger, "Tick() player info queue", respBytes)
+		p.Client.Queue(respBytes, true)
 	}
 }
 
@@ -213,7 +210,7 @@ func (p *Player) IsClientResizable() bool {
 	return p.WindowMode > 1
 }
 
-func (p *Player) ProcessActivePlayers(buf *bytebuffer.ByteBuffer, updateBlock *bytebuffer.ByteBuffer, nsn0 bool) {
+func (p *Player) ProcessActivePlayers(buf *packet.PacketBit, updateBlock *packet.Packet, nsn0 bool) {
 	buf.AccessBits()
 	// TODO: this is supposed to loop, and "nsn0" is supposed to check against a player flag to skip
 	if nsn0 {
@@ -238,7 +235,7 @@ func (p *Player) ProcessActivePlayers(buf *bytebuffer.ByteBuffer, updateBlock *b
 			//if p.Placement {
 			//	buf.PBit(2, 3) // teleport
 			//	buf.PBit(1, 1) // full location update
-			//	buf.PBit(30, p.Pos.Z | p.Pos.X << 14 | p.Pos.Plane << 28)
+			//	buf.PBit(30, p.pos.Z | p.pos.X << 14 | p.pos.Plane << 28)
 			//}
 		}
 
@@ -249,7 +246,7 @@ func (p *Player) ProcessActivePlayers(buf *bytebuffer.ByteBuffer, updateBlock *b
 	buf.AccessBytes()
 }
 
-func (p *Player) ProcessInactivePlayers(buf *bytebuffer.ByteBuffer, updateBlock *bytebuffer.ByteBuffer, nsn2 bool) {
+func (p *Player) ProcessInactivePlayers(buf *packet.PacketBit, updateBlock *packet.Packet, nsn2 bool) {
 	buf.AccessBits()
 	// TODO: "nsn2" is supposed to check against a player flag to skip
 	if nsn2 {
@@ -266,7 +263,7 @@ func (p *Player) ProcessInactivePlayers(buf *bytebuffer.ByteBuffer, updateBlock 
 }
 
 func (p *Player) GenerateAppearance() {
-	var buf bytebuffer.ByteBuffer
+	var buf packet.Packet
 
 	buf.P1(0)   // flags
 	buf.P1(255) // title-related (was -1)
@@ -298,11 +295,13 @@ func (p *Player) GenerateAppearance() {
 	buf.P2(33) // total level
 	buf.P1(0)  // sound radius
 
-	p.Appearance = new(bytebuffer.ByteBuffer)
-	p.Appearance.IPData(buf.Bytes())
+	//p.Appearance = packet.New(5000)
+	p.Appearance = new(packet.Packet)
+	x := buf.Bytes()
+	p.Appearance.IPData(x, len(x))
 }
 
-func (p *Player) AppendUpdateBlock(buf *bytebuffer.ByteBuffer) {
+func (p *Player) AppendUpdateBlock(buf *packet.Packet) {
 	var flags uint8 = 0
 
 	if p.Appearance == nil {
@@ -313,8 +312,9 @@ func (p *Player) AppendUpdateBlock(buf *bytebuffer.ByteBuffer) {
 	buf.P1(flags)
 
 	if flags&0x1 == 1 {
-		buf.P1Sub(uint8(p.Appearance.Len()))
-		buf.PData(p.Appearance)
+		buf.P1Alt3(uint8(p.Appearance.Len()))
+		l := p.Appearance.Len()
+		buf.PData(p.Appearance.Bytes(), l)
 	}
 }
 
@@ -324,17 +324,10 @@ func (p *Player) ProcessIn() {
 	for _, v := range decoded {
 		switch v.ID {
 		//case 78: // MOVE_GAMECLICK
-		//	ctrlClick, err := v.Data.G1() // g1add
-		//	if err != nil {
-		//		fmt.Println(err)
-		//	}
+		//	ctrlClick := v.Data.G1() // g1add
 		//
-		//	x, err := v.Data.G2()
-		//	if err != nil {
-		//		fmt.Println(err)
-		//	}
-		//
-		//	z := v.Data.IG2()
+		//	x := v.Data.G2()
+		//	z := v.Data.G2Alt1()
 		//
 		//	p.Pos.X = int(x)
 		//	p.Pos.Z = int(z)
@@ -343,10 +336,7 @@ func (p *Player) ProcessIn() {
 		//		p.Placement = true
 		//	}
 		case util.ClientProtClientCheat:
-			//tele, err := v.Data.G1()
-			//if err != nil {
-			//	fmt.Println(err)
-			//}
+			_ = v.Data.G1() // tele :=
 
 			cmd := strings.ToLower(v.Data.GJStr())
 			args := strings.Split(cmd, " ")
@@ -358,7 +348,7 @@ func (p *Player) ProcessIn() {
 				p.Logout()
 			}
 		default:
-			fmt.Println("Unhandled packet", v.ID)
+			p.Client.Server.Logger.Warn("unhandled packet", "packetID", v.ID)
 		}
 	}
 }
@@ -392,13 +382,15 @@ func (p *Player) OpenTab(tabID uint16, interfaceID uint16) {
 // encoders
 
 func (p *Player) Logout() {
-	var response bytebuffer.ByteBuffer
+	var response packet.Packet
 	response.P1(58)
-	p.Client.Queue(response.Bytes(), true)
+	respBytes := response.Bytes()
+	util.DebugfBytes(&p.Client.Server.Logger, "Logout() queue", respBytes)
+	p.Client.Queue(respBytes, true)
 }
 
 func (p *Player) MessageGame(msg string, msgType uint8, msg2 string, msg3 string) {
-	var response bytebuffer.ByteBuffer
+	var response packet.Packet
 	response.P1(99)
 	response.P1(0)
 	start := response.Len() // offset
@@ -428,11 +420,13 @@ func (p *Player) MessageGame(msg string, msgType uint8, msg2 string, msg3 string
 
 	response.PSize1(response.Len() - start)
 
-	p.Client.Queue(response.Bytes(), true)
+	respBytes := response.Bytes()
+	util.DebugfBytes(&p.Client.Server.Logger, "MessageGame() queue", respBytes)
+	p.Client.Queue(respBytes, true)
 }
 
 func (p *Player) OpenGameFrame(interfaceId uint16) {
-	var response bytebuffer.ByteBuffer
+	var response packet.Packet
 	response.P1(93)
 
 	response.P1(0)
@@ -440,19 +434,23 @@ func (p *Player) OpenGameFrame(interfaceId uint16) {
 	response.IP2(uint16(p.VerifyID))
 	p.VerifyID += 1
 
-	p.Client.Queue(response.Bytes(), true)
+	respBytes := response.Bytes()
+	util.DebugfBytes(&p.Client.Server.Logger, "OpenGameFrame() queue", respBytes)
+	p.Client.Queue(respBytes, true)
 }
 
 func (p *Player) OpenInterface(windowID uint16, componentId uint16, interfaceId uint16, flags uint8) {
-	var response bytebuffer.ByteBuffer
+	var response packet.Packet
 	response.P1(52)
 
-	response.P2Add(uint8(p.VerifyID))
+	response.P2Alt2(uint16(p.VerifyID))
 	p.VerifyID += 1
-	response.P1Sub(flags)
-	response.IP2(componentId)
-	response.IP2(windowID)
+	response.P1Alt3(flags)
+	response.P2Alt1(componentId)
+	response.P2Alt1(windowID)
 	response.P2(interfaceId)
 
-	p.Client.Queue(response.Bytes(), true)
+	respBytes := response.Bytes()
+	util.DebugfBytes(&p.Client.Server.Logger, "OpenInterface() queue", respBytes)
+	p.Client.Queue(respBytes, true)
 }

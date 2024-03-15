@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package bytebuffer
+package packet
 
 // Simple byte buffer for marshaling data.
 
@@ -15,13 +15,17 @@ import (
 // smallBufferSize is an initial allocation minimal capacity.
 const smallBufferSize = 64
 
-// A ByteBuffer is a variable-sized buffer of bytes with [ByteBuffer.Read] and [ByteBuffer.Write] methods.
-// The zero value for ByteBuffer is an empty buffer ready to use.
-type ByteBuffer struct {
-	buf      []byte // contents are the bytes buf[off : len(buf)]
-	off      int    // read at &buf[off], write at &buf[len(buf)]
-	bitOff   int    // TODO: mine
+// A Packet is a variable-sized buffer of bytes with [Packet.Read] and [ByteBuffer.Write] methods.
+// The zero value for Packet is an empty buffer ready to use.
+type Packet struct {
+	Buf      []byte // contents are the bytes Buf[Pos : len(Buf)]
+	Pos      int    // read at &Buf[Pos], write at &Buf[len(Buf)]
 	lastRead readOp // last read operation, so that Unread* can work correctly.
+}
+
+// mine - *read* offset - not advanced by write operations
+func (p *Packet) Offset() int {
+	return p.Pos
 }
 
 // The readOp constants describe the last action performed on
@@ -42,80 +46,80 @@ const (
 )
 
 // ErrTooLarge is passed to panic if memory cannot be allocated to store data in a buffer.
-var ErrTooLarge = errors.New("bytes.ByteBuffer: too large")
-var errNegativeRead = errors.New("bytes.ByteBuffer: reader returned negative count from Read")
+var ErrTooLarge = errors.New("bytes.Packet: too large")
+var errNegativeRead = errors.New("bytes.Packet: reader returned negative count from Read")
 
 const maxInt = int(^uint(0) >> 1)
 
 // Bytes returns a slice of length b.Len() holding the unread portion of the buffer.
 // The slice is valid for use only until the next buffer modification (that is,
-// only until the next call to a method like [Buffer.Read], [Buffer.Write], [ByteBuffer.Reset], or [Buffer.Truncate]).
+// only until the next call to a method like [Buffer.Read], [Buffer.Write], [Packet.Reset], or [Buffer.Truncate]).
 // The slice aliases the buffer content at least until the next buffer modification,
 // so immediate changes to the slice will affect the result of future reads.
-func (b *ByteBuffer) Bytes() []byte { return b.buf[b.off:] }
+func (p *Packet) Bytes() []byte { return p.Buf[p.Pos:] }
 
 // AvailableBuffer returns an empty buffer with b.Available() capacity.
 // This buffer is intended to be appended to and
-// passed to an immediately succeeding [ByteBuffer.Write] call.
+// passed to an immediately succeeding [Packet.Write] call.
 // The buffer is only valid until the next write operation on b.
-func (b *ByteBuffer) AvailableBuffer() []byte { return b.buf[len(b.buf):] }
+func (p *Packet) AvailableBuffer() []byte { return p.Buf[len(p.Buf):] }
 
 // String returns the contents of the unread portion of the buffer
-// as a string. If the [ByteBuffer] is a nil pointer, it returns "<nil>".
+// as a string. If the [Packet] is a nil pointer, it returns "<nil>".
 //
 // To build strings more efficiently, see the strings.Builder type.
-func (b *ByteBuffer) String() string {
-	if b == nil {
+func (p *Packet) String() string {
+	if p == nil {
 		// Special case, useful in debugging.
 		return "<nil>"
 	}
-	return string(b.buf[b.off:])
+	return string(p.Buf[p.Pos:])
 }
 
 // empty reports whether the unread portion of the buffer is empty.
-func (b *ByteBuffer) empty() bool { return len(b.buf) <= b.off }
+func (p *Packet) empty() bool { return len(p.Buf) <= p.Pos }
 
 // Len returns the number of bytes of the unread portion of the buffer;
 // b.Len() == len(b.Bytes()).
-func (b *ByteBuffer) Len() int { return len(b.buf) - b.off }
+func (p *Packet) Len() int { return len(p.Buf) - p.Pos }
 
 // Cap returns the capacity of the buffer's underlying byte slice, that is, the
 // total space allocated for the buffer's data.
-func (b *ByteBuffer) Cap() int { return cap(b.buf) }
+func (p *Packet) Cap() int { return cap(p.Buf) }
 
 // Available returns how many bytes are unused in the buffer.
-func (b *ByteBuffer) Available() int { return cap(b.buf) - len(b.buf) }
+func (p *Packet) Available() int { return cap(p.Buf) - len(p.Buf) }
 
 // Truncate discards all but the first n unread bytes from the buffer
 // but continues to use the same allocated storage.
 // It panics if n is negative or greater than the length of the buffer.
-func (b *ByteBuffer) Truncate(n int) {
+func (p *Packet) Truncate(n int) {
 	if n == 0 {
-		b.Reset()
+		p.Reset()
 		return
 	}
-	b.lastRead = opInvalid
-	if n < 0 || n > b.Len() {
-		panic("bytes.ByteBuffer: truncation out of range")
+	p.lastRead = opInvalid
+	if n < 0 || n > p.Len() {
+		panic("bytes.Packet: truncation out of range")
 	}
-	b.buf = b.buf[:b.off+n]
+	p.Buf = p.Buf[:p.Pos+n]
 }
 
 // Reset resets the buffer to be empty,
 // but it retains the underlying storage for use by future writes.
-// Reset is the same as [ByteBuffer.Truncate](0).
-func (b *ByteBuffer) Reset() {
-	b.buf = b.buf[:0]
-	b.off = 0
-	b.lastRead = opInvalid
+// Reset is the same as [Packet.Truncate](0).
+func (p *Packet) Reset() {
+	p.Buf = p.Buf[:0]
+	p.Pos = 0
+	p.lastRead = opInvalid
 }
 
 // tryGrowByReslice is an inlineable version of grow for the fast-case where the
 // internal buffer only needs to be resliced.
 // It returns the index where bytes should be written and whether it succeeded.
-func (b *ByteBuffer) tryGrowByReslice(n int) (int, bool) {
-	if l := len(b.buf); n <= cap(b.buf)-l {
-		b.buf = b.buf[:l+n]
+func (p *Packet) tryGrowByReslice(n int) (int, bool) {
+	if l := len(p.Buf); n <= cap(p.Buf)-l {
+		p.Buf = p.Buf[:l+n]
 		return l, true
 	}
 	return 0, false
@@ -124,36 +128,36 @@ func (b *ByteBuffer) tryGrowByReslice(n int) (int, bool) {
 // grow grows the buffer to guarantee space for n more bytes.
 // It returns the index where bytes should be written.
 // If the buffer can't grow it will panic with ErrTooLarge.
-func (b *ByteBuffer) grow(n int) int {
-	m := b.Len()
+func (p *Packet) grow(n int) int {
+	m := p.Len()
 	// If buffer is empty, reset to recover space.
-	if m == 0 && b.off != 0 {
-		b.Reset()
+	if m == 0 && p.Pos != 0 {
+		p.Reset()
 	}
 	// Try to grow by means of a reslice.
-	if i, ok := b.tryGrowByReslice(n); ok {
+	if i, ok := p.tryGrowByReslice(n); ok {
 		return i
 	}
-	if b.buf == nil && n <= smallBufferSize {
-		b.buf = make([]byte, n, smallBufferSize)
+	if p.Buf == nil && n <= smallBufferSize {
+		p.Buf = make([]byte, n, smallBufferSize)
 		return 0
 	}
-	c := cap(b.buf)
+	c := cap(p.Buf)
 	if n <= c/2-m {
 		// We can slide things down instead of allocating a new
 		// slice. We only need m+n <= c to slide, but
 		// we instead let capacity get twice as large so we
 		// don't spend all our time copying.
-		copy(b.buf, b.buf[b.off:])
+		copy(p.Buf, p.Buf[p.Pos:])
 	} else if c > maxInt-c-n {
 		panic(ErrTooLarge)
 	} else {
-		// Add b.off to account for b.buf[:b.off] being sliced off the front.
-		b.buf = growSlice(b.buf[b.off:], b.off+n)
+		// Add p.Pos to account for p.Buf[:p.Pos] being sliced Pos the front.
+		p.Buf = growSlice(p.Buf[p.Pos:], p.Pos+n)
 	}
-	// Restore b.off and len(b.buf).
-	b.off = 0
-	b.buf = b.buf[:m+n]
+	// Restore p.Pos and len(p.Buf).
+	p.Pos = 0
+	p.Buf = p.Buf[:m+n]
 	return m
 }
 
@@ -162,40 +166,40 @@ func (b *ByteBuffer) grow(n int) int {
 // buffer without another allocation.
 // If n is negative, Grow will panic.
 // If the buffer can't grow it will panic with [ErrTooLarge].
-func (b *ByteBuffer) Grow(n int) {
+func (p *Packet) Grow(n int) {
 	if n < 0 {
-		panic("bytes.ByteBuffer.Grow: negative count")
+		panic("bytes.Packet.Grow: negative count")
 	}
-	m := b.grow(n)
-	b.buf = b.buf[:m]
+	m := p.grow(n)
+	p.Buf = p.Buf[:m]
 }
 
-// Write appends the contents of p to the buffer, growing the buffer as
-// needed. The return value n is the length of p; err is always nil. If the
+// Write appends the contents of b to the buffer, growing the buffer as
+// needed. The return value n is the length of b; err is always nil. If the
 // buffer becomes too large, Write will panic with [ErrTooLarge].
-func (b *ByteBuffer) Write(p []byte) (n int, err error) {
-	b.lastRead = opInvalid
-	m, ok := b.tryGrowByReslice(len(p))
+func (p *Packet) Write(b []byte) (n int, err error) {
+	p.lastRead = opInvalid
+	m, ok := p.tryGrowByReslice(len(b))
 	if !ok {
-		m = b.grow(len(p))
+		m = p.grow(len(b))
 	}
-	return copy(b.buf[m:], p), nil
+	return copy(p.Buf[m:], b), nil
 }
 
 // WriteString appends the contents of s to the buffer, growing the buffer as
 // needed. The return value n is the length of s; err is always nil. If the
 // buffer becomes too large, WriteString will panic with [ErrTooLarge].
-func (b *ByteBuffer) WriteString(s string) (n int, err error) {
-	b.lastRead = opInvalid
-	m, ok := b.tryGrowByReslice(len(s))
+func (p *Packet) WriteString(s string) (n int, err error) {
+	p.lastRead = opInvalid
+	m, ok := p.tryGrowByReslice(len(s))
 	if !ok {
-		m = b.grow(len(s))
+		m = p.grow(len(s))
 	}
-	return copy(b.buf[m:], s), nil
+	return copy(p.Buf[m:], s), nil
 }
 
 // MinRead is the minimum slice size passed to a Read call by
-// [Buffer.ReadFrom]. As long as the [ByteBuffer] has at least MinRead bytes beyond
+// [Buffer.ReadFrom]. As long as the [Packet] has at least MinRead bytes beyond
 // what is required to hold the contents of r, ReadFrom will not grow the
 // underlying buffer.
 const MinRead = 512
@@ -204,17 +208,17 @@ const MinRead = 512
 // the buffer as needed. The return value n is the number of bytes read. Any
 // error except io.EOF encountered during the read is also returned. If the
 // buffer becomes too large, ReadFrom will panic with [ErrTooLarge].
-func (b *ByteBuffer) ReadFrom(r io.Reader) (n int64, err error) {
-	b.lastRead = opInvalid
+func (p *Packet) ReadFrom(r io.Reader) (n int64, err error) {
+	p.lastRead = opInvalid
 	for {
-		i := b.grow(MinRead)
-		b.buf = b.buf[:i]
-		m, e := r.Read(b.buf[i:cap(b.buf)])
+		i := p.grow(MinRead)
+		p.Buf = p.Buf[:i]
+		m, e := r.Read(p.Buf[i:cap(p.Buf)])
 		if m < 0 {
 			panic(errNegativeRead)
 		}
 
-		b.buf = b.buf[:i+m]
+		p.Buf = p.Buf[:i+m]
 		n += int64(m)
 		if e == io.EOF {
 			return n, nil // e is EOF, so return nil explicitly
@@ -256,14 +260,14 @@ func growSlice(b []byte, n int) []byte {
 // The return value n is the number of bytes written; it always fits into an
 // int, but it is int64 to match the io.WriterTo interface. Any error
 // encountered during the write is also returned.
-func (b *ByteBuffer) WriteTo(w io.Writer) (n int64, err error) {
-	b.lastRead = opInvalid
-	if nBytes := b.Len(); nBytes > 0 {
-		m, e := w.Write(b.buf[b.off:])
+func (p *Packet) WriteTo(w io.Writer) (n int64, err error) {
+	p.lastRead = opInvalid
+	if nBytes := p.Len(); nBytes > 0 {
+		m, e := w.Write(p.Buf[p.Pos:])
 		if m > nBytes {
-			panic("bytes.ByteBuffer.WriteTo: invalid Write count")
+			panic("bytes.Packet.WriteTo: invalid Write count")
 		}
-		b.off += m
+		p.Pos += m
 		n = int64(m)
 		if e != nil {
 			return n, e
@@ -274,8 +278,8 @@ func (b *ByteBuffer) WriteTo(w io.Writer) (n int64, err error) {
 			return n, io.ErrShortWrite
 		}
 	}
-	// ByteBuffer is now empty; reset.
-	b.Reset()
+	// Packet is now empty; reset.
+	p.Reset()
 	return n, nil
 }
 
@@ -283,13 +287,13 @@ func (b *ByteBuffer) WriteTo(w io.Writer) (n int64, err error) {
 // The returned error is always nil, but is included to match [bufio.Writer]'s
 // WriteByte. If the buffer becomes too large, WriteByte will panic with
 // [ErrTooLarge].
-func (b *ByteBuffer) WriteByte(c byte) error {
-	b.lastRead = opInvalid
-	m, ok := b.tryGrowByReslice(1)
+func (p *Packet) WriteByte(c byte) error {
+	p.lastRead = opInvalid
+	m, ok := p.tryGrowByReslice(1)
 	if !ok {
-		m = b.grow(1)
+		m = p.grow(1)
 	}
-	b.buf[m] = c
+	p.Buf[m] = c
 	return nil
 }
 
@@ -297,72 +301,72 @@ func (b *ByteBuffer) WriteByte(c byte) error {
 // buffer, returning its length and an error, which is always nil but is
 // included to match [bufio.Writer]'s WriteRune. The buffer is grown as needed;
 // if it becomes too large, WriteRune will panic with [ErrTooLarge].
-func (b *ByteBuffer) WriteRune(r rune) (n int, err error) {
+func (p *Packet) WriteRune(r rune) (n int, err error) {
 	// Compare as uint32 to correctly handle negative runes.
 	if uint32(r) < utf8.RuneSelf {
-		b.WriteByte(byte(r))
+		p.WriteByte(byte(r))
 		return 1, nil
 	}
-	b.lastRead = opInvalid
-	m, ok := b.tryGrowByReslice(utf8.UTFMax)
+	p.lastRead = opInvalid
+	m, ok := p.tryGrowByReslice(utf8.UTFMax)
 	if !ok {
-		m = b.grow(utf8.UTFMax)
+		m = p.grow(utf8.UTFMax)
 	}
-	b.buf = utf8.AppendRune(b.buf[:m], r)
-	return len(b.buf) - m, nil
+	p.Buf = utf8.AppendRune(p.Buf[:m], r)
+	return len(p.Buf) - m, nil
 }
 
-// Read reads the next len(p) bytes from the buffer or until the buffer
+// Read reads the next len(b) bytes from the buffer or until the buffer
 // is drained. The return value n is the number of bytes read. If the
-// buffer has no data to return, err is io.EOF (unless len(p) is zero);
+// buffer has no data to return, err is io.EOF (unless len(b) is zero);
 // otherwise it is nil.
-func (b *ByteBuffer) Read(p []byte) (n int, err error) {
-	b.lastRead = opInvalid
-	if b.empty() {
-		// ByteBuffer is empty, reset to recover space.
-		b.Reset()
-		if len(p) == 0 {
+func (p *Packet) Read(b []byte) (n int, err error) {
+	p.lastRead = opInvalid
+	if p.empty() {
+		// Packet is empty, reset to recover space.
+		p.Reset()
+		if len(b) == 0 {
 			return 0, nil
 		}
 		return 0, io.EOF
 	}
-	n = copy(p, b.buf[b.off:])
-	b.off += n
+	n = copy(b, p.Buf[p.Pos:])
+	p.Pos += n
 	if n > 0 {
-		b.lastRead = opRead
+		p.lastRead = opRead
 	}
 	return n, nil
 }
 
 // Next returns a slice containing the next n bytes from the buffer,
-// advancing the buffer as if the bytes had been returned by [ByteBuffer.Read].
+// advancing the buffer as if the bytes had been returned by [Packet.Read].
 // If there are fewer than n bytes in the buffer, Next returns the entire buffer.
 // The slice is only valid until the next call to a read or write method.
-func (b *ByteBuffer) Next(n int) []byte {
-	b.lastRead = opInvalid
-	m := b.Len()
+func (p *Packet) Next(n int) []byte {
+	p.lastRead = opInvalid
+	m := p.Len()
 	if n > m {
 		n = m
 	}
-	data := b.buf[b.off : b.off+n]
-	b.off += n
+	data := p.Buf[p.Pos : p.Pos+n]
+	p.Pos += n
 	if n > 0 {
-		b.lastRead = opRead
+		p.lastRead = opRead
 	}
 	return data
 }
 
 // ReadByte reads and returns the next byte from the buffer.
 // If no byte is available, it returns error io.EOF.
-func (b *ByteBuffer) ReadByte() (byte, error) {
-	if b.empty() {
-		// ByteBuffer is empty, reset to recover space.
-		b.Reset()
+func (p *Packet) ReadByte() (byte, error) {
+	if p.empty() {
+		// Packet is empty, reset to recover space.
+		p.Reset()
 		return 0, io.EOF
 	}
-	c := b.buf[b.off]
-	b.off++
-	b.lastRead = opRead
+	c := p.Buf[p.Pos]
+	p.Pos++
+	p.lastRead = opRead
 	return c, nil
 }
 
@@ -371,53 +375,53 @@ func (b *ByteBuffer) ReadByte() (byte, error) {
 // If no bytes are available, the error returned is io.EOF.
 // If the bytes are an erroneous UTF-8 encoding, it
 // consumes one byte and returns U+FFFD, 1.
-func (b *ByteBuffer) ReadRune() (r rune, size int, err error) {
-	if b.empty() {
-		// ByteBuffer is empty, reset to recover space.
-		b.Reset()
+func (p *Packet) ReadRune() (r rune, size int, err error) {
+	if p.empty() {
+		// Packet is empty, reset to recover space.
+		p.Reset()
 		return 0, 0, io.EOF
 	}
-	c := b.buf[b.off]
+	c := p.Buf[p.Pos]
 	if c < utf8.RuneSelf {
-		b.off++
-		b.lastRead = opReadRune1
+		p.Pos++
+		p.lastRead = opReadRune1
 		return rune(c), 1, nil
 	}
-	r, n := utf8.DecodeRune(b.buf[b.off:])
-	b.off += n
-	b.lastRead = readOp(n)
+	r, n := utf8.DecodeRune(p.Buf[p.Pos:])
+	p.Pos += n
+	p.lastRead = readOp(n)
 	return r, n, nil
 }
 
-// UnreadRune unreads the last rune returned by [ByteBuffer.ReadRune].
+// UnreadRune unreads the last rune returned by [Packet.ReadRune].
 // If the most recent read or write operation on the buffer was
-// not a successful [ByteBuffer.ReadRune], UnreadRune returns an error.  (In this regard
-// it is stricter than [ByteBuffer.UnreadByte], which will unread the last byte
+// not a successful [Packet.ReadRune], UnreadRune returns an error.  (In this regard
+// it is stricter than [Packet.UnreadByte], which will unread the last byte
 // from any read operation.)
-func (b *ByteBuffer) UnreadRune() error {
-	if b.lastRead <= opInvalid {
-		return errors.New("bytes.ByteBuffer: UnreadRune: previous operation was not a successful ReadRune")
+func (p *Packet) UnreadRune() error {
+	if p.lastRead <= opInvalid {
+		return errors.New("bytes.Packet: UnreadRune: previous operation was not a successful ReadRune")
 	}
-	if b.off >= int(b.lastRead) {
-		b.off -= int(b.lastRead)
+	if p.Pos >= int(p.lastRead) {
+		p.Pos -= int(p.lastRead)
 	}
-	b.lastRead = opInvalid
+	p.lastRead = opInvalid
 	return nil
 }
 
-var errUnreadByte = errors.New("bytes.ByteBuffer: UnreadByte: previous operation was not a successful read")
+var errUnreadByte = errors.New("bytes.Packet: UnreadByte: previous operation was not a successful read")
 
 // UnreadByte unreads the last byte returned by the most recent successful
 // read operation that read at least one byte. If a write has happened since
 // the last read, if the last read returned an error, or if the read read zero
 // bytes, UnreadByte returns an error.
-func (b *ByteBuffer) UnreadByte() error {
-	if b.lastRead == opInvalid {
+func (p *Packet) UnreadByte() error {
+	if p.lastRead == opInvalid {
 		return errUnreadByte
 	}
-	b.lastRead = opInvalid
-	if b.off > 0 {
-		b.off--
+	p.lastRead = opInvalid
+	if p.Pos > 0 {
+		p.Pos--
 	}
 	return nil
 }
@@ -428,8 +432,8 @@ func (b *ByteBuffer) UnreadByte() error {
 // it returns the data read before the error and the error itself (often io.EOF).
 // ReadBytes returns err != nil if and only if the returned data does not end in
 // delim.
-func (b *ByteBuffer) ReadBytes(delim byte) (line []byte, err error) {
-	slice, err := b.readSlice(delim)
+func (p *Packet) ReadBytes(delim byte) (line []byte, err error) {
+	slice, err := p.readSlice(delim)
 	// return a copy of slice. The buffer's backing array may
 	// be overwritten by later calls.
 	line = append(line, slice...)
@@ -437,16 +441,16 @@ func (b *ByteBuffer) ReadBytes(delim byte) (line []byte, err error) {
 }
 
 // readSlice is like ReadBytes but returns a reference to internal buffer data.
-func (b *ByteBuffer) readSlice(delim byte) (line []byte, err error) {
-	i := IndexByte(b.buf[b.off:], delim)
-	end := b.off + i + 1
+func (p *Packet) readSlice(delim byte) (line []byte, err error) {
+	i := IndexByte(p.Buf[p.Pos:], delim)
+	end := p.Pos + i + 1
 	if i < 0 {
-		end = len(b.buf)
+		end = len(p.Buf)
 		err = io.EOF
 	}
-	line = b.buf[b.off:end]
-	b.off = end
-	b.lastRead = opRead
+	line = p.Buf[p.Pos:end]
+	p.Pos = end
+	p.lastRead = opRead
 	return line, err
 }
 
@@ -466,28 +470,28 @@ func IndexByte(b []byte, c byte) int {
 // it returns the data read before the error and the error itself (often io.EOF).
 // ReadString returns err != nil if and only if the returned data does not end
 // in delim.
-func (b *ByteBuffer) ReadString(delim byte) (line string, err error) {
-	slice, err := b.readSlice(delim)
+func (p *Packet) ReadString(delim byte) (line string, err error) {
+	slice, err := p.readSlice(delim)
 	return string(slice), err
 }
 
-// NewBuffer creates and initializes a new [ByteBuffer] using buf as its
-// initial contents. The new [ByteBuffer] takes ownership of buf, and the
-// caller should not use buf after this call. NewBuffer is intended to
-// prepare a [ByteBuffer] to read existing data. It can also be used to set
+// NewPacket creates and initializes a new [Packet] using Buf as its
+// initial contents. The new [Packet] takes ownership of Buf, and the
+// caller should not use Buf after this call. NewPacket is intended to
+// prepare a [Packet] to read existing data. It can also be used to set
 // the initial size of the internal buffer for writing. To do that,
-// buf should have the desired capacity but a length of zero.
+// Buf should have the desired capacity but a length of zero.
 //
-// In most cases, new([ByteBuffer]) (or just declaring a [ByteBuffer] variable) is
-// sufficient to initialize a [ByteBuffer].
-func NewBuffer(buf []byte) *ByteBuffer { return &ByteBuffer{buf: buf} }
+// In most cases, new([Packet]) (or just declaring a [Packet] variable) is
+// sufficient to initialize a [Packet].
+func NewPacket(buf []byte) *Packet { return &Packet{Buf: buf} }
 
-// NewBufferString creates and initializes a new [ByteBuffer] using string s as its
+// NewPacketString creates and initializes a new [Packet] using string s as its
 // initial contents. It is intended to prepare a buffer to read an existing
 // string.
 //
-// In most cases, new([ByteBuffer]) (or just declaring a [ByteBuffer] variable) is
-// sufficient to initialize a [ByteBuffer].
-func NewBufferString(s string) *ByteBuffer {
-	return &ByteBuffer{buf: []byte(s)}
+// In most cases, new([Packet]) (or just declaring a [Packet] variable) is
+// sufficient to initialize a [Packet].
+func NewPacketString(s string) *Packet {
+	return &Packet{Buf: []byte(s)}
 }

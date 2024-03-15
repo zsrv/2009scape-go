@@ -4,7 +4,7 @@ const Size = 256
 const GoldenRatio uint32 = 0x9E3779B9
 
 type IsaacRandom struct {
-	count int
+	count int32
 	a     uint32
 	b     uint32
 	c     uint32
@@ -25,7 +25,6 @@ func NewIsaacRandom(seed []uint32) *IsaacRandom {
 }
 
 func (is *IsaacRandom) isaac() {
-	// TODO: unsigned right shifts
 	is.c += 1
 	is.b += is.c
 
@@ -53,7 +52,6 @@ func (is *IsaacRandom) isaac() {
 }
 
 func (is *IsaacRandom) init() {
-	// TODO: unsigned right shifts
 	a := GoldenRatio
 	b := GoldenRatio
 	c := GoldenRatio
@@ -205,18 +203,19 @@ func (is *IsaacRandom) init() {
 	is.count = Size
 }
 
-func (is *IsaacRandom) NextInt() uint32 {
+func (is *IsaacRandom) PeekNext() uint32 {
 	if is.count == 0 {
-		is.count -= 1
 		is.isaac()
-		is.count = Size - 1
-	} else {
-		is.count -= 1
+		is.count = Size
 	}
+	return is.rsl[is.count-1]
+}
 
-	if len(is.rsl)-1 >= is.count {
-		return is.rsl[is.count]
-	} else {
-		return 0
+func (is *IsaacRandom) GetNext() uint32 {
+	if is.count == 0 {
+		is.isaac()
+		is.count = Size
 	}
+	is.count--
+	return is.rsl[is.count]
 }
